@@ -15,7 +15,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 library(tidyverse)
-setwd("C:/Users/Student/OneDrive - University of Virginia/Desktop/SYS2202/Final")
+#setwd("C:/Users/Student/OneDrive - University of Virginia/Desktop/SYS2202/Final")
 
 # complaints dataset
 complaints <- read_csv("NYPD_Complaint_Data_Current__Year_To_Date_.csv")
@@ -39,17 +39,35 @@ Complaints dataset: LAW_CAT_CD, BORO_NM
 
 ```{r}
 complaints %>%
-  select(LAW_CAT_CD, BORO_NM) %>%
+  dplyr::select(LAW_CAT_CD, BORO_NM) %>%
   glimpse()
 ```
 
 Income dataset: Work Location Borough, Base Salary
 ```{r}
 income %>%
-  select(`Work Location Borough`, `Base Salary`) %>%
+  dplyr::select(`Work Location Borough`, `Base Salary`) %>%
   glimpse()
 ```
 
+# missing values - pre cleaning
+```{r}
+complaints %>%
+  filter(is.na(BORO_NM)) %>%
+  count()
+```
+
+There are 1151 observations that are missing the name of the borough. This is only (approximately) 0.2% of all total complaints, so they will be removed. 
+
+
+# Data Cleaning: Complaints Data
+```{r}
+# only look at complaints from after 2015
+complaints <- complaints %>%
+  filter(CMPLNT_FR_DT >= 1/1/2015) %>%
+  # remove observations without a borough
+  filter(!is.na(BORO_NM))
+```
 
 # Search for evidence by visualising, transforming, and modeling your data
 
@@ -63,8 +81,6 @@ We will start by just looking at crimes by borough before factoring in income.
 
 ```{r}
 complaints %>%
-  select(CMPLNT_FR_DT, KY_CD, LAW_CAT_CD, BORO_NM) %>%
-  filter(!is.na(BORO_NM)) %>%
   group_by(BORO_NM) %>%
   summarize(count = n()) %>%
   ggplot(aes(x=reorder(BORO_NM, -(count)), y=count, fill=BORO_NM)) + 
@@ -79,7 +95,6 @@ It can be observed that the Bronx experiences the highest number of complaints i
 
 ```{r}
 complaints %>%
-  select(CMPLNT_FR_DT, KY_CD, LAW_CAT_CD, BORO_NM) %>%
   filter(!is.na(LAW_CAT_CD)) %>%
   group_by(LAW_CAT_CD) %>%
   summarize(count = n()) %>%
@@ -93,8 +108,6 @@ complaints %>%
 
 ```{r}
 complaints %>%
-  select(CMPLNT_FR_DT, KY_CD, LAW_CAT_CD, BORO_NM) %>%
-  filter(!is.na(BORO_NM)) %>%
   group_by(BORO_NM, LAW_CAT_CD) %>%
   summarize(count = n()) %>%
   
@@ -107,8 +120,6 @@ complaints %>%
 
 ```{r}
 complaints %>%
-  select(CMPLNT_FR_DT, KY_CD, LAW_CAT_CD, BORO_NM) %>%
-  filter(!is.na(BORO_NM)) %>%
   group_by(BORO_NM, LAW_CAT_CD) %>%
   summarize(count = n()) %>%
   
@@ -119,27 +130,16 @@ complaints %>%
   xlab("Borough Name") + ylab("Percent")
 ```
 
-#### Check Unusual values
-
-
-#### Identify and Handle Missing values
-
-```{r}
-complaints %>%
-  filter(is.na(BORO_NM)) %>%
-  count()
-```
-There are 1151 observations that are missing the name of the borough. This is only (approximately) 0.2% of all total complaints, so they will be removed. 
-
   
 ### Variables to examine: Work Location Borough, Base Salary
 
 #### Visualize distributions (Barcharts, Histograms)
 
 Base Salary is listed in multiple different ways (yearly, monthly, hourly).
-We will eventually need to convert all observations into a yearly salary.
+For this analysis, we will only be looking at annual salaries.
 
-Before performing the conversion, we should look at how the data is distributed between each type, and the distribution of salaries within each type. 
+# Data cleaning
+Filter the income data to only include those actively working and those earning an annual salary. Unusual values will be dealt with later.
 
 ```{r}
 income_annual <- income %>%
@@ -149,15 +149,13 @@ income_annual <- income %>%
          basis = `Pay Basis`) %>%
   # we only want to look at individuals who are actively working, otherwise the   data will be skewed
   filter(`Leave Status as of June 30` == "ACTIVE") %>%
-  select(boro, basis, salary) %>%
   filter(basis == 'per Annum')
-income_annual
+head(income_annual)
 ```
 
 ```{r}
 # Distribution of annual salaries
 income_annual %>%
-  filter(basis == 'per Annum') %>%
   ggplot(aes(x=salary)) + 
   geom_histogram() + ggtitle("Distribution of Annual Salaries")
 ```
@@ -173,9 +171,22 @@ summary(income_annual$salary)
 # Determining outliers
 income_annual %>%
   filter(salary > quantile(salary,0.75) + 1.5*IQR(salary))
-  
 ```
 
+```{r}
+# There are 32,739 values considered to be outliers. For now, they will be removed from the data:
+income_annual <- income_annual %>%
+  filter(salary < quantile(salary,0.75) + 1.5*IQR(salary))
+```
+
+Now we can observe the distribution of annual salaries without outliers:
+```{r}
+income_annual %>%
+  ggplot(aes(x=salary)) + 
+  geom_histogram() + ggtitle("Distribution of Annual Salaries")
+```
+
+There appears to be a large cluster whose salary is between $75,000 and $80,000. 
 
 ```{r}
 # Cleaning borough variable
@@ -197,18 +208,16 @@ The two datasets need to be joined in order to analyze the relationship between 
 
 ```{r}
 income_by_boro <- income_annual %>%
-  mutate(BORO_NM=str_to_upper(boro)) %>%
-  filter(BORO_NM == 'BRONX' | BORO_NM == 'BROOKLYN' | BORO_NM == 'QUEENS' |
-         BORO_NM == 'MANHATTAN') %>%
-  group_by(BORO_NM) %>%
+  mutate(boro=str_to_upper(boro)) %>%
+  filter(boro == 'BRONX' | boro == 'BROOKLYN' | boro == 'QUEENS' |
+         boro == 'MANHATTAN') %>%
+  group_by(boro) %>%
   summarize(median_salary = median(salary))
 ```
 
 
 ```{r}
 crime_by_boro <- complaints %>%
-  select(CMPLNT_FR_DT, KY_CD, LAW_CAT_CD, BORO_NM) %>%
-  filter(!is.na(BORO_NM)) %>%
   group_by(BORO_NM) %>%
   summarize(count = n())
 ```
@@ -216,7 +225,9 @@ crime_by_boro <- complaints %>%
 
 ```{r}
 # income and crime
-income_and_crime <- left_join(income_by_boro, crime_by_boro, by = "BORO_NM") %>%
+income_and_crime <- income_by_boro %>%
+  rename(BORO_NM = boro) %>%
+  left_join(. , crime_by_boro, by = "BORO_NM") %>%
   rename(complaint_count = count)
 ```
 
@@ -241,12 +252,17 @@ spdf_new <- spdf_new %>%
 # Merge geospatial and numeric data
 spdf_new <- spdf_new %>%
   left_join(. , crime_by_boro, by=c("id"="BORO_NM"))
+  
+spdf_new <- spdf_new %>%
+  left_join(. , income_by_boro, by=c("id"="boro"))
+
 ```
 
 ```{r}
 # Felonies
 felonies <- complaints %>%
-  filter(LAW_CAT_CD == "FELONY")
+  filter(LAW_CAT_CD == "FELONY") %>%
+  filter(CMPLNT_FR_DT > 1/1/2021 && CMPLNT_FR_DT < 12/31/2022)
 ```
 
 
@@ -254,17 +270,12 @@ felonies <- complaints %>%
 # Plot map & points
 library(ggplot2)
 ggplot() +
-  geom_polygon(data = spdf_new, aes(fill = count, x = long, y = lat, group = group)) +
+  geom_polygon(data = spdf_new, aes(fill = median_salary, x = long, y = lat, group = group)) +
   theme_void() +
   coord_map() +
-  labs(fill = "Number of Crime Complaints") +
-  geom_point(data=felonies, aes(x=Longitude, y=Latitude), size = 0.25, alpha = 0.75)
+  labs(fill = "Median Salary") + 
+  ggtitle("Boroughs of NYC by Median Salaries")
+  #geom_point(data=felonies, aes(x=Longitude, y=Latitude), size = 0.25, alpha = 0.75)
 ```
 
-
-
-```{r}
-spdf_new %>%
-  left_join(. , complaints, by=c("long"="Longitude", "lat"="Latitude")) 
-```
-
+Next steps: incorporating crime into the map and getting data for Staten Island
