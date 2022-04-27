@@ -13,27 +13,30 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Final Project Topic: Crime, Cybersecurity
 
+Load datasets:
 ```{r}
 library(tidyverse)
-#setwd("C:/Users/Student/OneDrive - University of Virginia/Desktop/SYS2202/Final")
+setwd("C:/Users/Student/OneDrive - University of Virginia/Desktop/SYS2202/Final/SYS2202-Final-repo")
 
-# complaints dataset
-complaints <- read_csv("NYPD_Complaint_Data_Current__Year_To_Date_.csv")
-
-# income dataset
-income <- read_csv("Citywide_Payroll_Data__Fiscal_Year_.csv")
+# population dataset
+#population <- read_csv("New_York_City_Population_By_Neighborhood_Tabulation_Areas.csv")
 ```
 
-Note: All steps must be demonstrated and implemented in R. 
+```{r}
+# Datasets
 
-# Describe what the datasets are about and list one main questions/hypothesis you want to test with this data.
+# complaints dataset
+complaints <- read_csv("C:/Users/Student/OneDrive - University of Virginia/Desktop/SYS2202/Final/NYPD_Complaint_Data_Current__Year_To_Date_.csv")
 
-Question: How does the level of wealth in an area affect the frequency of crimes committed?
-Sub-Question: What about the types of crimes being committed?
+# income dataset
+income <- read_csv("C:/Users/Student/OneDrive - University of Virginia/Desktop/SYS2202/Final/Citywide_Payroll_Data__Fiscal_Year_.csv") 
+```
 
-# Relevant variables
 
-## What are the types of those variables? How do you determine that?
+## Question: How does the level of wealth in an area affect the frequency of crimes committed? 
+## Sub-Question: What about the types of crimes being committed?
+
+### Relevant variables
 
 Complaints dataset: LAW_CAT_CD, BORO_NM
 
@@ -43,14 +46,18 @@ complaints %>%
   glimpse()
 ```
 
+LAW_CAT_CD and BORO_NM are both character variables. LAW_CAT_CD has 3 values: violation, misdemeanor, and felony. BORO_NM has 5 levels (there are 5 boroughs in NYC): Bronx, Brooklyn, Queens, Manhattan, and Staten Island.
+
 Income dataset: Work Location Borough, Base Salary
 ```{r}
 income %>%
   dplyr::select(`Work Location Borough`, `Base Salary`) %>%
   glimpse()
 ```
+Base Salary is a numeric variable, that represents each persons salary. The salaries are recorded as either yearly, monthly, hourly, or prorated yearly.
 
-# missing values - pre cleaning
+
+#### missing values - pre cleaning
 ```{r}
 complaints %>%
   filter(is.na(BORO_NM)) %>%
@@ -59,19 +66,17 @@ complaints %>%
 
 There are 1151 observations that are missing the name of the borough. This is only (approximately) 0.2% of all total complaints, so they will be removed. 
 
+## Complaints Data
 
-# Data Cleaning: Complaints Data
+### Preliminary Data Cleaning
+To clean the complaints data, we will start by filtering out all observations prior to 2018, and those missing the borough. Borough values are needed because this variable will be the key to joining the income and complaints datasets.
 ```{r}
 # only look at complaints from after 2015
 complaints <- complaints %>%
-  filter(CMPLNT_FR_DT >= 1/1/2015) %>%
+  filter(CMPLNT_FR_DT >= 1/1/2018) %>%
   # remove observations without a borough
   filter(!is.na(BORO_NM))
 ```
-
-# Search for evidence by visualising, transforming, and modeling your data
-
-## What type of variation occurs within each variable?
 
 ### Variables to examine: LAW_CAT_CD, BORO_NM
 
@@ -91,7 +96,25 @@ complaints %>%
 ```
 
 
-It can be observed that the Bronx experiences the highest number of complaints in this dataset. Now we can look into the number of complaints by the level of offense (felony, misdemeanor, violation). First we will look at the distribution of LAW_CAT_CD using a bar graph.
+It can be observed that the Bronx experiences the highest number of complaints in this dataset, and Staten Island the smallest. Though this is helpful in understanding the data, it will be more telling if the complaints are normalized by population:
+
+```{r}
+borough_populations = c(1472654, 2736074, 1694251, 2405464, 495747)
+complaints %>%
+  group_by(BORO_NM) %>%
+  summarize(count = n()) %>%
+  add_column(population = borough_populations) %>%
+  mutate(crime_rate = count / population) %>%
+  ggplot(aes(x=reorder(BORO_NM, -(crime_rate)), y=crime_rate, fill=BORO_NM)) +
+  geom_bar(stat="identity") + 
+  coord_flip() +
+  theme(legend.position = "none") + 
+  ggtitle("Crime Rates by Borough") + xlab("Borough Name")
+```
+From this, we see that Manhattan has the highest crime rate, followed by Bronx and Brooklyn. Staten Island and Queens still remain the lowest two, but the differences are less pronounced. 
+
+
+Now we can look into the number of complaints by the level of offense (felony, misdemeanor, violation). First we will look at the distribution of LAW_CAT_CD using a bar graph.
 
 ```{r}
 complaints %>%
@@ -118,6 +141,25 @@ complaints %>%
   xlab("Borough Name")
 ```
 
+Again, it is more useful to look at this graph using crime complaints normalized by populations:
+
+```{r}
+# each population is listed 3 times to correspond to the length of the dataframe when grouping by LAW_CAT_CD and BORO_NM
+borough_populations = c(1472654, 1472654, 1472654, 2736074, 2736074, 2736074, 1694251, 1694251, 1694251, 2405464, 2405464, 2405464, 495747, 495747, 495747)
+complaints %>%
+  group_by(BORO_NM, LAW_CAT_CD) %>%
+  summarize(count = n()) %>%
+  add_column(population = borough_populations) %>%
+  mutate(crime_rate = count / population) %>%
+  ggplot(aes(x=reorder(BORO_NM, -(crime_rate)), y=crime_rate, fill=LAW_CAT_CD)) +
+  geom_bar(stat="identity") + 
+  coord_flip() +
+  ggtitle("Crime Rates by Borough and Level of Offense") + xlab("Borough Name")
+```
+In both of the above graphs, the proportion of each category of crime appears to be approximately the same. In other words, higher crime rates do not imply a disproportionately higher level of a certain crime. 
+
+Taking a closer look, it easier to see this proportions of each crime level in the boroughs: 
+
 ```{r}
 complaints %>%
   group_by(BORO_NM, LAW_CAT_CD) %>%
@@ -130,15 +172,16 @@ complaints %>%
   xlab("Borough Name") + ylab("Percent")
 ```
 
+## Income Data
   
 ### Variables to examine: Work Location Borough, Base Salary
 
 #### Visualize distributions (Barcharts, Histograms)
 
 Base Salary is listed in multiple different ways (yearly, monthly, hourly).
-For this analysis, we will only be looking at annual salaries.
+For this analysis, we will only be looking at annual salaries. Removing observations that are recorded on a monthly or hourly basis still leaves over 1 million observations, so lack of data is not an issue.
 
-# Data cleaning
+#### Data cleaning
 Filter the income data to only include those actively working and those earning an annual salary. Unusual values will be dealt with later.
 
 ```{r}
@@ -149,7 +192,8 @@ income_annual <- income %>%
          basis = `Pay Basis`) %>%
   # we only want to look at individuals who are actively working, otherwise the   data will be skewed
   filter(`Leave Status as of June 30` == "ACTIVE") %>%
-  filter(basis == 'per Annum')
+  filter(basis == 'per Annum') %>%
+  filter(`Fiscal Year` >= 2018)
 head(income_annual)
 ```
 
@@ -160,12 +204,14 @@ income_annual %>%
   geom_histogram() + ggtitle("Distribution of Annual Salaries")
 ```
 
-The histogram is right skewed, meaning there are some high outliers. These values may need to be removed/assigned a new value later in the analysis.
+The histogram is right skewed, meaning there are some high outliers. These values may need to be removed/assigned a new value later in the analysis. 
 
 ```{r}
+# Summary of income data; to be used to determine outliers
 summarize(income_annual, median(salary), mean(salary), IQR(salary), sd(salary))
 summary(income_annual$salary)
 ```
+
 
 ```{r}
 # Determining outliers
@@ -173,8 +219,10 @@ income_annual %>%
   filter(salary > quantile(salary,0.75) + 1.5*IQR(salary))
 ```
 
+Using the formula from before, all outliers will be removed from the dataset. Again, this still leaves plenty of data to work with. 
+
 ```{r}
-# There are 32,739 values considered to be outliers. For now, they will be removed from the data:
+# Removing outliers
 income_annual <- income_annual %>%
   filter(salary < quantile(salary,0.75) + 1.5*IQR(salary))
 ```
@@ -186,33 +234,40 @@ income_annual %>%
   geom_histogram() + ggtitle("Distribution of Annual Salaries")
 ```
 
-There appears to be a large cluster whose salary is between $75,000 and $80,000. 
+There appears to be a large cluster whose salary is between $75,000 and $80,000.
+
+The borough variable in the income dataset has different capitalizations, which need to be fixed so that it can be joined with the complaints data. This is done below.
 
 ```{r}
 # Cleaning borough variable
 library(stringr)
-income_annual %>%
+income_annual <- income_annual %>%
   mutate(BORO_NM = str_to_upper(boro)) %>%
   filter(BORO_NM == 'BRONX' | BORO_NM == 'BROOKLYN' | BORO_NM == 'QUEENS' |
-         BORO_NM == 'MANHATTAN') %>%
-  filter(basis == 'per Annum') %>%
-  
-  # Distribution by borough
+         BORO_NM == 'MANHATTAN' | BORO_NM == 'RICHMOND') %>% 
+  # Staten Island is also known as Richmond
+  mutate_at('BORO_NM', str_replace, 'RICHMOND', 'STATEN ISLAND')
+```
+
+Now that the salary data and borough names have been cleaned, we can look at the distribution of salaries by borough:
+
+```{r}
+# Distribution by borough
+income_annual %>%
   filter(salary > 0 && salary < quantile(salary,0.75) + 1.5*IQR(salary)) %>%
   ggplot(aes(x=salary, color = BORO_NM)) + 
   geom_freqpoly() + ggtitle("Distribution of Annual Salaries \n by Borough")
 ```
+All boroughs appear to have a cluster between $75000 and $80000, as well as one around $45000. This may be due to a common position, or common salary for entry-level positions. 
 
 ## Covariation between variables
 The two datasets need to be joined in order to analyze the relationship between income and crime.
 
 ```{r}
 income_by_boro <- income_annual %>%
-  mutate(boro=str_to_upper(boro)) %>%
-  filter(boro == 'BRONX' | boro == 'BROOKLYN' | boro == 'QUEENS' |
-         boro == 'MANHATTAN') %>%
-  group_by(boro) %>%
+  group_by(BORO_NM) %>%
   summarize(median_salary = median(salary))
+income_by_boro
 ```
 
 
@@ -220,17 +275,29 @@ income_by_boro <- income_annual %>%
 crime_by_boro <- complaints %>%
   group_by(BORO_NM) %>%
   summarize(count = n())
+
+
+crime_counts_categories <- complaints %>%
+  group_by(BORO_NM, LAW_CAT_CD) %>%
+  summarize(count = n())
 ```
 
 
 ```{r}
 # income and crime
 income_and_crime <- income_by_boro %>%
-  rename(BORO_NM = boro) %>%
   left_join(. , crime_by_boro, by = "BORO_NM") %>%
-  rename(complaint_count = count)
+  rename(complaint_count = count) %>%
+  arrange(desc(median_salary))
+income_and_crime
 ```
 
+```{r}
+library(ggpubr)
+cor.test(income_and_crime$median_salary, income_and_crime$complaint_count)
+```
+
+There is not a significant correlation between median_salary and complaint_count. This may be partly due to the small number of data point (5), since boroughs are such a large unit of analysis. For now, we will visualize the data using a map. Later, the analysis will be expanded to look into smaller regions of NYC in order to observe any relationship in more detail.
 
 # Using geospatial data
 ```{r}
@@ -250,19 +317,25 @@ spdf_new <- spdf_new %>%
 
 ```{r}
 # Merge geospatial and numeric data
-spdf_new <- spdf_new %>%
-  left_join(. , crime_by_boro, by=c("id"="BORO_NM"))
-  
-spdf_new <- spdf_new %>%
-  left_join(. , income_by_boro, by=c("id"="boro"))
-
+spdf_income <- spdf_new %>%
+  left_join(. , income_by_boro, by=c("id"="BORO_NM"))
 ```
 
 ```{r}
-# Felonies
-felonies <- complaints %>%
-  filter(LAW_CAT_CD == "FELONY") %>%
-  filter(CMPLNT_FR_DT > 1/1/2021 && CMPLNT_FR_DT < 12/31/2022)
+# creating crime points to display on map
+categories <- complaints %>%
+  dplyr::select(LAW_CAT_CD, BORO_NM, Latitude, Longitude) %>%
+  group_by(BORO_NM, LAW_CAT_CD) %>%
+  summarize(across(.fns = mean)) %>%
+  
+  # need to add random numbers to Latitude or Longitude to see all points in plot:
+  mutate(Longitude_random = Longitude + runif(length(Longitude), 
+                                            min=0.001, max = 0.01)) %>%
+  mutate(Latitude_random = Latitude + runif(length(Latitude), 
+                                            min=0.001, max=0.025))
+
+categories$count <- crime_counts_categories$count
+head(categories)
 ```
 
 
@@ -270,12 +343,65 @@ felonies <- complaints %>%
 # Plot map & points
 library(ggplot2)
 ggplot() +
-  geom_polygon(data = spdf_new, aes(fill = median_salary, x = long, y = lat, group = group)) +
+  geom_polygon(data = spdf_income, aes(fill = median_salary, x = long, y = lat, group = group)) + 
   theme_void() +
   coord_map() +
   labs(fill = "Median Salary") + 
-  ggtitle("Boroughs of NYC by Median Salaries")
-  #geom_point(data=felonies, aes(x=Longitude, y=Latitude), size = 0.25, alpha = 0.75)
+  ggtitle("Boroughs of NYC by Median Salary and Crime Levels") + 
+  geom_point(data=categories, aes(x=Longitude_random, y=Latitude_random, 
+            color = LAW_CAT_CD, size = count), alpha = 0.75) + 
+  scale_color_manual(values = c("#FF0000", "#E7B800", "#008000"))
 ```
 
-Next steps: incorporating crime into the map and getting data for Staten Island
+### Zooming in: Using data by zip code
+
+Median salary is not representative of all areas within each borough. For the next round of analysis, we will look into income & crime within each zip code in New York. 
+
+```{r}
+my_spdf1 <- shapefile("C:/Users/Student/OneDrive - University of Virginia/Desktop/SYS2202/Final/zipcode_shape_file/zipcodes.shp")
+```
+
+
+```{r}
+spdf_zipcodes_new <- tidy(my_spdf1, zip="modzcta")
+```
+
+```{r}
+# getting back zipcode after tidy()
+temp_df <- data.frame(my_spdf1@data$modzcta)
+names(temp_df) <- c("modzcta")
+# create and append id
+temp_df$id <- seq(0,nrow(temp_df)-1)
+
+spdf_zipcodes_new <- spdf_zipcodes_new %>%
+  mutate(id=as.integer(id)) %>%
+  left_join(. , temp_df, by="id")
+head(spdf_zipcodes_new)
+```
+
+
+```{r}
+# income data by neighborhood to fill map:
+zip_income <- read_csv("C:/Users/Student/OneDrive - University of Virginia/Desktop/SYS2202/Final/zip_code_income.csv")
+```
+
+Merge geospatial neighborhood data and income data:
+```{r}
+spdf_income_zipcode <- spdf_zipcodes_new %>%
+  mutate(modzcta = as.double(modzcta)) %>%
+  left_join(. , zip_income, by=c("modzcta"="zipcode")) %>%
+  rename(median_household_income=`Median Household Income`)
+head(spdf_income_zipcode)
+```
+
+
+```{r}
+# Plot map & points
+library(ggplot2)
+ggplot() +
+  geom_polygon(data = spdf_income_zipcode, aes(fill = median_household_income, x = long, y = lat, group = group)) + 
+  theme_void() +
+  coord_map() + 
+  scale_fill_viridis_c(option = "H")
+```
+
