@@ -468,7 +468,7 @@ crime rate is in the crime_count_zip dataframe, and income is in zip income:
 income_crime_corr <- zip_income %>%
   mutate(zip = as.character(zipcode)) %>%
   left_join(. , crime_count_zip, by=c("zip"="modzcta")) %>%
-  dplyr::select(zip, `Median Household Income`, crime_rate)
+  dplyr::select(zip, `Median Household Income`, count, crime_rate)
 head(income_crime_corr)
 
 ggplot(income_crime_corr, aes(x=crime_rate, y=`Median Household Income`)) + 
@@ -480,3 +480,12 @@ ggplot(income_crime_corr, aes(x=crime_rate, y=`Median Household Income`)) +
 ```
 
 There is not a linear relationship between income and crime, when looking at the zipcodes of New York City.
+
+```{r}
+ggplot(income_crime_corr, aes(x=count, y=`Median Household Income`)) + 
+  geom_point() + geom_smooth(method='lm', formula= y~x) + 
+  stat_regline_equation(label.y = 225000, aes(label = ..eq.label..)) +
+  stat_regline_equation(label.y = 210000, aes(label = ..rr.label..)) +
+  ggtitle("Income vs. Crime Count")
+```
+The correlation is more apparent when looking at counts of crime (i.e. not normalizing for population).
