@@ -17,9 +17,6 @@ Load datasets:
 ```{r}
 library(tidyverse)
 setwd("C:/Users/Student/OneDrive - University of Virginia/Desktop/SYS2202/Final/SYS2202-Final-repo")
-
-# population dataset
-#population <- read_csv("New_York_City_Population_By_Neighborhood_Tabulation_Areas.csv")
 ```
 
 ```{r}
@@ -111,6 +108,7 @@ complaints %>%
   theme(legend.position = "none") + 
   ggtitle("Crime Rates by Borough") + xlab("Borough Name")
 ```
+
 From this, we see that Manhattan has the highest crime rate, followed by Bronx and Brooklyn. Staten Island and Queens still remain the lowest two, but the differences are less pronounced. 
 
 
@@ -396,12 +394,89 @@ head(spdf_income_zipcode)
 
 
 ```{r}
-# Plot map & points
+# Plot map 
 library(ggplot2)
-ggplot() +
+income_map <- ggplot() +
   geom_polygon(data = spdf_income_zipcode, aes(fill = median_household_income, x = long, y = lat, group = group)) + 
   theme_void() +
   coord_map() + 
   scale_fill_viridis_c(option = "H")
+income_map + ggtitle("NYC Median Household Income by Zip Code")
 ```
 
+Now, let's visualize crime along with income. First, we need to add a zip code column to the complaints data, then normalize the crime by population within each zip code. 
+
+```{r}
+library(sf)
+crimes_loc <- complaints %>%
+  dplyr::select(Latitude, Longitude)
+
+# convert Lat_Lon to spatial data
+# help from stackoverflow:
+# https://stackoverflow.com/questions/64281070/checking-if-a-point-falls-within-polygon-shapefile
+map = read_sf("C:/Users/Student/OneDrive - University of Virginia/Desktop/SYS2202/Final/zipcode_shape_file/zipcodes.shp")
+map <- st_transform(map,crs=4326)
+
+pnts_sf <- st_as_sf(crimes_loc, coords = c('Longitude', 'Latitude'), crs = st_crs(map))
+pnts_trans <- st_transform(pnts_sf,crs=4326)
+result <- sf::st_join(pnts_trans, map)
+result <- result %>%
+  rename(crime_location = geometry)
+head(result)
+```
+
+Result dataframe includes the locations of the crime complaints with zipcodes. Before mapping, we will calculate the crime rate for each zipcode by dividing the number of complaints by the estimated population (which is data provided by the shape file).
+
+```{r}
+crime_count_zip <- result %>%
+  group_by(modzcta) %>%
+  summarize(count = n())
+```
+
+```{r}
+crime_count_zip <- crime_count_zip %>%
+  filter(!(is.na(modzcta))) %>% # income data was missing a few zip codes
+  mutate(loc = st_centroid(crime_location)) %>%
+  mutate(pop = map$pop_est) %>%
+  mutate(crime_rate = count / pop)
+head(crime_count_zip)
+
+#Now we have the counts of crime in each zip code, the populations, and a central point to plot. 
+```
+
+Plot income & crime:
+
+```{r}
+# separate point objects into latitude and longitude for geom_point()
+points <- as.data.frame(st_coordinates(crime_count_zip$loc))
+crime_count_zip <- crime_count_zip %>%
+  mutate(lon = points$X, lat = points$Y)
+
+# create number of sizes to show
+mybreaks <- c(0.1, 0.2, 0.4, 0.6)
+
+income_map +
+  geom_point(data=crime_count_zip, aes(x=lon,y=lat,size = crime_rate), fill="grey", alpha=0.3) + 
+  scale_size_continuous(name="Crime Rate (complaints/population)", breaks=mybreaks) + 
+  ggtitle("Income and Crime in New York City")
+```
+
+In addition to the map, we can check for a linear relationship between median household income (this time by zipcode) and crime rate.
+crime rate is in the crime_count_zip dataframe, and income is in zip income:
+
+```{r}
+income_crime_corr <- zip_income %>%
+  mutate(zip = as.character(zipcode)) %>%
+  left_join(. , crime_count_zip, by=c("zip"="modzcta")) %>%
+  dplyr::select(zip, `Median Household Income`, crime_rate)
+head(income_crime_corr)
+
+ggplot(income_crime_corr, aes(x=crime_rate, y=`Median Household Income`)) + 
+  geom_point() + geom_smooth(method='lm', formula= y~x) + 
+  stat_regline_equation(label.y = 225000, aes(label = ..eq.label..)) +
+  stat_regline_equation(label.y = 210000, aes(label = ..rr.label..)) +
+  ggtitle("Income vs. Crime Rate")
+
+```
+
+There is not a linear relationship between income and crime, when looking at the zipcodes of New York City.
